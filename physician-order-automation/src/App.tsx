@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import AuthPanel from "./features/auth/AuthPanel";
+import DiagnosisEditor from "./features/orders/DiagnosisEditor";
 import PatientRecordsPanel from "./features/patients/PatientRecordsPanel";
 
 type DatabaseStatus = {
@@ -39,7 +40,12 @@ export default function App() {
       </header>
       {error && <p role="alert" className="rounded bg-red-50 p-3 text-sm text-red-800">{error}</p>}
       <AuthPanel onAuthenticatedChange={setUser} />
-      {user && <PatientRecordsPanel isAdmin={user.role === "admin"} />}
+      {user && (
+        <>
+          <PatientRecordsPanel isAdmin={user.role === "admin"} />
+          <DiagnosisEditor />
+        </>
+      )}
     </main>
   );
 }
