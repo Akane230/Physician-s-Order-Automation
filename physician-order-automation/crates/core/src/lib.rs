@@ -6,6 +6,7 @@
 pub mod auth;
 pub mod db;
 pub mod error;
+pub mod orders;
 pub mod parsing;
 pub mod patients;
 pub mod reference_data;

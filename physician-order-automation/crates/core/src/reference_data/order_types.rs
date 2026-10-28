@@ -3,6 +3,7 @@ use super::{
     helpers::{optional_text, random_id, required_text},
 };
 use crate::{CoreError, CoreResult};
+use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize)]
@@ -26,6 +27,23 @@ pub struct OrderTypeDraft {
 }
 
 impl ReferenceDataRepository {
+    pub fn get_active_order_type(&self, id: &str) -> CoreResult<OrderType> {
+        let conn = self.database.open()?;
+        conn.query_row(
+            "SELECT id, name, md_order_body, active, sort_order FROM order_types WHERE id = ?1 AND active = 1",
+            [id],
+            |row| Ok(OrderType {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                md_order_body: row.get(2)?,
+                active: row.get(3)?,
+                sort_order: row.get(4)?,
+            }),
+        )
+        .optional()?
+        .ok_or_else(|| CoreError::Validation("selected order type is unavailable".into()))
+    }
+
     pub fn list_order_types(&self, include_inactive: bool) -> CoreResult<Vec<OrderType>> {
         let conn = self.database.open()?;
         let mut statement = conn.prepare(

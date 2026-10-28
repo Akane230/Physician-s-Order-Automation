@@ -44,7 +44,8 @@ pub fn run() {
             commands::reference_data::delete_physician,
             commands::reference_data::list_order_types,
             commands::reference_data::save_order_type,
-            commands::reference_data::delete_order_type
+            commands::reference_data::delete_order_type,
+            commands::orders::export_order
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

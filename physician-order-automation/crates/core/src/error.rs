@@ -26,4 +26,6 @@ pub enum CoreError {
     SessionRequired,
     #[error("administrator role required")]
     PermissionDenied,
+    #[error("PDF generation failed: {0}")]
+    Pdf(String),
 }
