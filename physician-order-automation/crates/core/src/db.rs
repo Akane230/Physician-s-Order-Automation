@@ -2,7 +2,11 @@ use crate::{CoreError, CoreResult};
 use keyring::Entry;
 use rusqlite::{Connection, OpenFlags, TransactionBehavior};
 use serde::Serialize;
-use std::{fs, path::{Path, PathBuf}, time::Duration};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    time::Duration,
+};
 use zeroize::Zeroizing;
 
 const KEY_SERVICE: &str = "com.homekure.physician-order-automation";
@@ -35,8 +39,7 @@ impl Database {
     /// Opens the SQLCipher database, applies migrations and enables WAL mode.
     pub fn open(&self) -> CoreResult<Connection> {
         if let Some(parent) = self.path.parent() {
-            fs::create_dir_all(parent)
-                .map_err(|e| CoreError::Initialization(e.to_string()))?;
+            fs::create_dir_all(parent).map_err(|e| CoreError::Initialization(e.to_string()))?;
         }
 
         let key = database_key()?;
@@ -65,14 +68,18 @@ impl Database {
             [],
             |row| row.get(0),
         )?;
-        let cipher_version: String = conn.query_row("PRAGMA cipher_version", [], |row| row.get(0))?;
-        Ok(DatabaseStatus { schema_version, cipher_version })
+        let cipher_version: String =
+            conn.query_row("PRAGMA cipher_version", [], |row| row.get(0))?;
+        Ok(DatabaseStatus {
+            schema_version,
+            cipher_version,
+        })
     }
 }
 
 fn database_key() -> CoreResult<Zeroizing<String>> {
-    let entry = Entry::new(KEY_SERVICE, KEY_ACCOUNT)
-        .map_err(|e| CoreError::KeyStore(e.to_string()))?;
+    let entry =
+        Entry::new(KEY_SERVICE, KEY_ACCOUNT).map_err(|e| CoreError::KeyStore(e.to_string()))?;
 
     match entry.get_secret() {
         Ok(bytes) => {
