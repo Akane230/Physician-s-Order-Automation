@@ -1,18 +1,8 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-use orders_core::db::{Database, DatabaseStatus};
-use tauri::{Manager, State};
+mod commands;
 
-#[tauri::command]
-fn ping() -> String {
-    orders_core::ping()
-}
-
-#[tauri::command]
-fn database_status(database: State<'_, Database>) -> Result<DatabaseStatus, String> {
-    database
-        .status()
-        .map_err(|_| "Database is unavailable or could not be opened.".to_string())
-}
+use orders_core::{auth::AuthService, db::Database};
+use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -27,10 +17,18 @@ pub fn run() {
             drop(database.open().map_err(|error| {
                 std::io::Error::other(format!("database initialization failed: {error}"))
             })?);
+            app.manage(AuthService::new(database.clone()));
             app.manage(database);
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![ping, database_status])
+        .invoke_handler(tauri::generate_handler![
+            commands::system::ping,
+            commands::database::database_status,
+            commands::auth::auth_status,
+            commands::auth::setup_initial_admin,
+            commands::auth::login,
+            commands::auth::logout
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
