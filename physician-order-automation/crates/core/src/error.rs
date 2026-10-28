@@ -14,4 +14,14 @@ pub enum CoreError {
     UnsupportedSchema { found: i64, supported: i64 },
     #[error("database initialization failed: {0}")]
     Initialization(String),
+    #[error("invalid input: {0}")]
+    Validation(String),
+    #[error("initial administrator has already been created")]
+    SetupComplete,
+    #[error("username or password is incorrect")]
+    InvalidCredentials,
+    #[error("account is temporarily locked")]
+    AccountLocked,
+    #[error("no active user session")]
+    SessionRequired,
 }

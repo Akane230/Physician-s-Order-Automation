@@ -1,16 +1,34 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import AuthPanel from "./features/auth/AuthPanel";
+
+type DatabaseStatus = {
+  schemaVersion: number;
+  cipherVersion: string;
+};
 
 export default function App() {
-  const [msg, setMsg] = useState("Checking local database...");
+  const [database, setDatabase] = useState<DatabaseStatus | null>(null);
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    invoke<{ schemaVersion: number; cipherVersion: string }>("database_status")
-      .then(({ schemaVersion, cipherVersion }) =>
-        setMsg(`Database ready · schema v${schemaVersion} · SQLCipher ${cipherVersion}`),
-      )
-      .catch((e) => setMsg("ERROR: " + String(e)));
+    invoke<DatabaseStatus>("database_status")
+      .then(setDatabase)
+      .catch((reason: unknown) => setError(String(reason)));
   }, []);
 
-  return <h1 className="p-6 text-xl">{msg}</h1>;
+  return (
+    <main className="mx-auto flex min-h-screen max-w-xl flex-col gap-6 p-8 text-slate-900">
+      <header>
+        <h1 className="text-2xl font-semibold">Physician Order Automation</h1>
+        <p className="mt-2 text-sm text-slate-600">
+          {database
+            ? `Local database ready · schema v${database.schemaVersion} · SQLCipher ${database.cipherVersion}`
+            : "Opening local encrypted database…"}
+        </p>
+      </header>
+      {error && <p role="alert" className="rounded bg-red-50 p-3 text-sm text-red-800">{error}</p>}
+      <AuthPanel />
+    </main>
+  );
 }
