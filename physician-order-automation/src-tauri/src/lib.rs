@@ -33,7 +33,8 @@ pub fn run() {
             commands::patients::get_patient,
             commands::patients::save_patient,
             commands::patients::delete_patient,
-            commands::parsing::parse_demographics
+            commands::parsing::parse_demographics,
+            commands::diagnoses::parse_diagnoses
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
