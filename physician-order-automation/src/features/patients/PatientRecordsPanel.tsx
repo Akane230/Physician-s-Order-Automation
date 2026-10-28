@@ -17,6 +17,7 @@ type PatientRecord = {
 
 type PatientDraft = Omit<PatientRecord, "id" | "createdAt" | "updatedAt">;
 type SaveResult = { status: "created" | "updated" | "conflict"; patientId: string };
+type ParsedDemographics = Partial<PatientDraft> & { warnings: string[] };
 
 const emptyPatient: PatientDraft = {
   fullName: "",
@@ -32,6 +33,7 @@ export default function PatientRecordsPanel({ isAdmin }: { isAdmin: boolean }) {
   const [patient, setPatient] = useState<PatientDraft>({ ...emptyPatient });
   const [records, setRecords] = useState<PatientRecord[]>([]);
   const [query, setQuery] = useState("");
+  const [pasteText, setPasteText] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -44,6 +46,29 @@ export default function PatientRecordsPanel({ isAdmin }: { isAdmin: boolean }) {
     if (!preserveMessage) setMessage("");
     try {
       setRecords(await invoke<PatientRecord[]>("search_patients", { query }));
+    } catch (reason) {
+      setMessage(String(reason));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function autoFill() {
+    setBusy(true);
+    setMessage("");
+    try {
+      const parsed = await invoke<ParsedDemographics>("parse_demographics", { text: pasteText });
+      setPatient((current) => ({
+        ...current,
+        fullName: parsed.fullName ?? current.fullName,
+        gender: parsed.gender ?? current.gender,
+        address: parsed.address ?? current.address,
+        dob: parsed.dob ?? current.dob,
+        phone: parsed.phone ?? current.phone,
+        medicare: parsed.medicare ?? current.medicare,
+        otherInsurance: parsed.otherInsurance ?? current.otherInsurance,
+      }));
+      setMessage(parsed.warnings.join(" ") || "Review the populated fields before saving.");
     } catch (reason) {
       setMessage(String(reason));
     } finally {
@@ -104,6 +129,15 @@ export default function PatientRecordsPanel({ isAdmin }: { isAdmin: boolean }) {
       <h2 className="text-lg font-medium">Patient records</h2>
       <p className="mt-1 text-sm text-slate-600">Only patient demographics are saved. Diagnoses and order details are not part of this record.</p>
       {message && <p role="status" className="mt-3 rounded bg-slate-50 p-3 text-sm">{message}</p>}
+
+      <div className="mt-5">
+        <label className="flex flex-col gap-1 text-sm" htmlFor="demographicsPaste">Paste patient demographics</label>
+        <textarea id="demographicsPaste" className="mt-2 min-h-28 w-full rounded border border-slate-300 px-3 py-2" placeholder="Paste labeled demographics from an intake sheet. The text is parsed locally and is not saved." value={pasteText} onChange={(event) => setPasteText(event.target.value)} />
+        <div className="mt-2 flex gap-2">
+          <button className="rounded bg-slate-800 px-3 py-2 text-white disabled:opacity-50" disabled={busy || !pasteText.trim()} onClick={() => void autoFill()}>Auto-fill fields</button>
+          <button className="rounded border border-slate-300 px-3 py-2" onClick={() => setPasteText("")}>Clear paste</button>
+        </div>
+      </div>
 
       <div className="mt-5 flex gap-2">
         <input className="min-w-0 flex-1 rounded border border-slate-300 px-3 py-2" aria-label="Search patient records" placeholder="Search name, phone, or Medicare" value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void search(); }} />
