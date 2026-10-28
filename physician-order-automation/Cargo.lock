@@ -2850,6 +2850,7 @@ version = "0.1.0"
 dependencies = [
  "argon2",
  "chrono",
+ "getrandom 0.3.4",
  "keyring",
  "lopdf",
  "regex",

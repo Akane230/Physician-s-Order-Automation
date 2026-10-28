@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 argon2 = "0.6.0"
 chrono = "0.4.45"
+getrandom = "0.3.4"
 keyring = "4.2.0"
 lopdf = "0.45.0"
 regex = "1.13.1"
