@@ -1,7 +1,10 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 mod commands;
 
-use orders_core::{auth::AuthService, db::Database, patients::PatientRepository};
+use orders_core::{
+    auth::AuthService, db::Database, patients::PatientRepository,
+    reference_data::ReferenceDataRepository,
+};
 use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -19,6 +22,7 @@ pub fn run() {
             })?);
             app.manage(AuthService::new(database.clone()));
             app.manage(PatientRepository::new(database.clone()));
+            app.manage(ReferenceDataRepository::new(database.clone()));
             app.manage(database);
             Ok(())
         })
@@ -34,7 +38,13 @@ pub fn run() {
             commands::patients::save_patient,
             commands::patients::delete_patient,
             commands::parsing::parse_demographics,
-            commands::diagnoses::parse_diagnoses
+            commands::diagnoses::parse_diagnoses,
+            commands::reference_data::list_physicians,
+            commands::reference_data::save_physician,
+            commands::reference_data::delete_physician,
+            commands::reference_data::list_order_types,
+            commands::reference_data::save_order_type,
+            commands::reference_data::delete_order_type
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

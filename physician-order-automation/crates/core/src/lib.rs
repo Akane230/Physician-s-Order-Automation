@@ -8,6 +8,7 @@ pub mod db;
 pub mod error;
 pub mod parsing;
 pub mod patients;
+pub mod reference_data;
 
 pub use error::{CoreError, CoreResult};
 
