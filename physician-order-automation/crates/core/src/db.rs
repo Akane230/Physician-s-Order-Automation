@@ -11,7 +11,7 @@ use zeroize::Zeroizing;
 
 const KEY_SERVICE: &str = "com.homekure.physician-order-automation";
 const KEY_ACCOUNT: &str = "sqlcipher-database-key-v1";
-const SCHEMA_VERSION: i64 = 1;
+const SCHEMA_VERSION: i64 = 2;
 
 /// Owns the encrypted local database path and opens configured connections.
 /// The database key is created once and stored only in the OS credential store.
@@ -128,6 +128,10 @@ fn migrate(conn: &mut Connection) -> CoreResult<()> {
         tx.execute_batch(MIGRATION_1)?;
         tx.pragma_update(None, "user_version", 1)?;
     }
+    if current < 2 {
+        tx.execute_batch(MIGRATION_2)?;
+        tx.pragma_update(None, "user_version", 2)?;
+    }
     tx.commit()?;
     Ok(())
 }
@@ -233,6 +237,15 @@ CREATE TABLE schema_version (
 );
 INSERT INTO schema_version(version, applied_at)
 VALUES (1, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));
+"#;
+
+const MIGRATION_2: &str = r#"
+ALTER TABLE patients ADD COLUMN medicare_normalized TEXT;
+CREATE INDEX patients_medicare_normalized ON patients(medicare_normalized);
+ALTER TABLE patients ADD COLUMN name_normalized TEXT;
+CREATE INDEX patients_name_normalized_dob ON patients(name_normalized, dob);
+INSERT INTO schema_version(version, applied_at)
+VALUES (2, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));
 "#;
 
 use zeroize::Zeroize;

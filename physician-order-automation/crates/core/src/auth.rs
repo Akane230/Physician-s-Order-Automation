@@ -119,8 +119,8 @@ impl AuthService {
         let password = Zeroizing::new(password);
         let conn = self.database.open()?;
         let account = conn.query_row(
-            "SELECT id, username, display_name, password_hash, role, active, failed_attempts, locked_until, must_change_password\
-             FROM users WHERE username = ?1 COLLATE NOCASE",
+            r#"SELECT id, username, display_name, password_hash, role, active, failed_attempts, locked_until, must_change_password
+               FROM users WHERE username = ?1 COLLATE NOCASE"#,
             [&username],
             |row| Ok((
                 row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?,
@@ -193,6 +193,32 @@ impl AuthService {
             .lock()
             .map_err(|_| CoreError::Initialization("session state unavailable".into()))? = None;
         Ok(())
+    }
+
+    /// Validates and refreshes the in-memory session for an authenticated operation.
+    pub fn require_authenticated(&self) -> CoreResult<AuthenticatedUser> {
+        let mut session = self
+            .session
+            .lock()
+            .map_err(|_| CoreError::Initialization("session state unavailable".into()))?;
+        let Some(active) = session.as_mut() else {
+            return Err(CoreError::SessionRequired);
+        };
+        if Utc::now() - active.last_activity >= Duration::minutes(SESSION_IDLE_MINUTES) {
+            *session = None;
+            return Err(CoreError::SessionRequired);
+        }
+        active.last_activity = Utc::now();
+        Ok(active.user.clone())
+    }
+
+    /// Validates that the active account has the administrator role.
+    pub fn require_admin(&self) -> CoreResult<AuthenticatedUser> {
+        let user = self.require_authenticated()?;
+        if user.role != "admin" {
+            return Err(CoreError::PermissionDenied);
+        }
+        Ok(user)
     }
 
     fn establish_session(&self, user: AuthenticatedUser) -> CoreResult<()> {
