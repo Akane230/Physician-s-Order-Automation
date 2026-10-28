@@ -3,6 +3,7 @@ use super::{
     helpers::{random_id, required_text},
 };
 use crate::{CoreError, CoreResult};
+use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize)]
@@ -26,6 +27,25 @@ pub struct PhysicianDraft {
 }
 
 impl ReferenceDataRepository {
+    pub fn get_active_physician(&self, id: &str) -> CoreResult<Physician> {
+        let conn = self.database.open()?;
+        conn.query_row(
+            "SELECT id, name, npi, active, sort_order FROM physicians WHERE id = ?1 AND active = 1",
+            [id],
+            |row| {
+                Ok(Physician {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    npi: row.get(2)?,
+                    active: row.get(3)?,
+                    sort_order: row.get(4)?,
+                })
+            },
+        )
+        .optional()?
+        .ok_or_else(|| CoreError::Validation("selected physician is unavailable".into()))
+    }
+
     pub fn list_physicians(&self, include_inactive: bool) -> CoreResult<Vec<Physician>> {
         let conn = self.database.open()?;
         let mut statement = conn.prepare(

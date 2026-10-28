@@ -1,17 +1,21 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { FormEvent } from "react";
 
-type Diagnosis = {
+export type Diagnosis = {
   code: string | null;
   description: string;
 };
 
-export default function DiagnosisEditor() {
+export default function DiagnosisEditor({ onDiagnosesChange }: { onDiagnosesChange: (diagnoses: Diagnosis[]) => void }) {
   const [sourceText, setSourceText] = useState("");
   const [diagnoses, setDiagnoses] = useState<Diagnosis[]>([]);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    onDiagnosesChange(diagnoses);
+  }, [diagnoses, onDiagnosesChange]);
 
   async function parse(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

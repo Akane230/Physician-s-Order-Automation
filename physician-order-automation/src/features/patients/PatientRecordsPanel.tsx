@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { FormEvent } from "react";
 
@@ -15,7 +15,12 @@ type PatientRecord = {
   updatedAt: string;
 };
 
-type PatientDraft = Omit<PatientRecord, "id" | "createdAt" | "updatedAt">;
+export type PatientDraft = Omit<PatientRecord, "id" | "createdAt" | "updatedAt">;
+export type PatientSelection = {
+  draft: PatientDraft;
+  persistedId: string | null;
+  original: PatientDraft | null;
+};
 type SaveResult = { status: "created" | "updated" | "conflict"; patientId: string };
 type ParsedDemographics = Partial<PatientDraft> & { warnings: string[] };
 
@@ -29,13 +34,22 @@ const emptyPatient: PatientDraft = {
   otherInsurance: "",
 };
 
-export default function PatientRecordsPanel({ isAdmin }: { isAdmin: boolean }) {
+export default function PatientRecordsPanel({ isAdmin, onPatientChange }: {
+  isAdmin: boolean;
+  onPatientChange: (patient: PatientSelection) => void;
+}) {
   const [patient, setPatient] = useState<PatientDraft>({ ...emptyPatient });
+  const [persistedId, setPersistedId] = useState<string | null>(null);
+  const [original, setOriginal] = useState<PatientDraft | null>(null);
   const [records, setRecords] = useState<PatientRecord[]>([]);
   const [query, setQuery] = useState("");
   const [pasteText, setPasteText] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    onPatientChange({ draft: patient, persistedId, original });
+  }, [onPatientChange, patient, persistedId, original]);
 
   function update<K extends keyof PatientDraft>(key: K, value: PatientDraft[K]) {
     setPatient((current) => ({ ...current, [key]: value }));
@@ -85,6 +99,8 @@ export default function PatientRecordsPanel({ isAdmin }: { isAdmin: boolean }) {
       if (result.status === "conflict") {
         setMessage("A possible duplicate has different demographic details. Review the matching record before saving.");
       } else {
+        setPersistedId(result.patientId);
+        setOriginal({ ...patient });
         setMessage(result.status === "created" ? "Patient record saved." : "Patient record updated.");
         await search(true);
       }
@@ -103,7 +119,11 @@ export default function PatientRecordsPanel({ isAdmin }: { isAdmin: boolean }) {
       const deleted = await invoke<boolean>("delete_patient", { patientId: record.id });
       setMessage(deleted ? "Patient record deleted." : "Patient record was not found.");
       await search(true);
-      if (patient.fullName === record.fullName) setPatient({ ...emptyPatient });
+      if (persistedId === record.id) {
+        setPatient({ ...emptyPatient });
+        setPersistedId(null);
+        setOriginal(null);
+      }
     } catch (reason) {
       setMessage(String(reason));
     } finally {
@@ -112,7 +132,7 @@ export default function PatientRecordsPanel({ isAdmin }: { isAdmin: boolean }) {
   }
 
   function selectRecord(record: PatientRecord) {
-    setPatient({
+    const selected = {
       fullName: record.fullName,
       gender: record.gender ?? "",
       address: record.address ?? "",
@@ -120,8 +140,18 @@ export default function PatientRecordsPanel({ isAdmin }: { isAdmin: boolean }) {
       phone: record.phone ?? "",
       medicare: record.medicare ?? "",
       otherInsurance: record.otherInsurance ?? "",
-    });
+    };
+    setPatient(selected);
+    setPersistedId(record.id);
+    setOriginal(selected);
     setMessage("Loaded patient demographics into the form.");
+  }
+
+  function startNewPatient() {
+    setPatient({ ...emptyPatient });
+    setPersistedId(null);
+    setOriginal(null);
+    setMessage("");
   }
 
   return (
@@ -138,6 +168,10 @@ export default function PatientRecordsPanel({ isAdmin }: { isAdmin: boolean }) {
           <button className="rounded border border-slate-300 px-3 py-2" onClick={() => setPasteText("")}>Clear paste</button>
         </div>
       </div>
+
+      <button className="mt-3 text-sm text-blue-700 hover:underline" type="button" onClick={startNewPatient}>
+        Start a new patient
+      </button>
 
       <div className="mt-5 flex gap-2">
         <input className="min-w-0 flex-1 rounded border border-slate-300 px-3 py-2" aria-label="Search patient records" placeholder="Search name, phone, or Medicare" value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void search(); }} />
