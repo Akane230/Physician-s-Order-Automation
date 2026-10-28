@@ -24,4 +24,6 @@ pub enum CoreError {
     AccountLocked,
     #[error("no active user session")]
     SessionRequired,
+    #[error("administrator role required")]
+    PermissionDenied,
 }

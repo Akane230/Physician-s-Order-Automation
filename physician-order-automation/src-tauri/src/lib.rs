@@ -1,7 +1,7 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 mod commands;
 
-use orders_core::{auth::AuthService, db::Database};
+use orders_core::{auth::AuthService, db::Database, patients::PatientRepository};
 use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -18,6 +18,7 @@ pub fn run() {
                 std::io::Error::other(format!("database initialization failed: {error}"))
             })?);
             app.manage(AuthService::new(database.clone()));
+            app.manage(PatientRepository::new(database.clone()));
             app.manage(database);
             Ok(())
         })
@@ -27,7 +28,11 @@ pub fn run() {
             commands::auth::auth_status,
             commands::auth::setup_initial_admin,
             commands::auth::login,
-            commands::auth::logout
+            commands::auth::logout,
+            commands::patients::search_patients,
+            commands::patients::get_patient,
+            commands::patients::save_patient,
+            commands::patients::delete_patient
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

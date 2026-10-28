@@ -15,7 +15,11 @@ type AuthStatus = {
   user: AuthenticatedUser | null;
 };
 
-export default function AuthPanel() {
+type AuthPanelProps = {
+  onAuthenticatedChange: (user: AuthenticatedUser | null) => void;
+};
+
+export default function AuthPanel({ onAuthenticatedChange }: AuthPanelProps) {
   const [auth, setAuth] = useState<AuthStatus | null>(null);
   const [username, setUsername] = useState("");
   const [displayName, setDisplayName] = useState("");
@@ -24,8 +28,10 @@ export default function AuthPanel() {
   const [busy, setBusy] = useState(false);
 
   const refresh = useCallback(async () => {
-    setAuth(await invoke<AuthStatus>("auth_status"));
-  }, []);
+    const status = await invoke<AuthStatus>("auth_status");
+    setAuth(status);
+    onAuthenticatedChange(status.user);
+  }, [onAuthenticatedChange]);
 
   useEffect(() => {
     refresh().catch((reason: unknown) => setError(String(reason)));
