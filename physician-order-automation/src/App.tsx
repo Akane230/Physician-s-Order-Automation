@@ -1,14 +1,24 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import AuthPanel from "./features/auth/AuthPanel";
+import PatientRecordsPanel from "./features/patients/PatientRecordsPanel";
 
 type DatabaseStatus = {
   schemaVersion: number;
   cipherVersion: string;
 };
 
+type AuthenticatedUser = {
+  id: string;
+  username: string;
+  displayName: string;
+  role: string;
+  mustChangePassword: boolean;
+};
+
 export default function App() {
   const [database, setDatabase] = useState<DatabaseStatus | null>(null);
+  const [user, setUser] = useState<AuthenticatedUser | null>(null);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -28,7 +38,8 @@ export default function App() {
         </p>
       </header>
       {error && <p role="alert" className="rounded bg-red-50 p-3 text-sm text-red-800">{error}</p>}
-      <AuthPanel />
+      <AuthPanel onAuthenticatedChange={setUser} />
+      {user && <PatientRecordsPanel isAdmin={user.role === "admin"} />}
     </main>
   );
 }
