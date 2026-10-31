@@ -42,6 +42,14 @@ pub(super) fn render_pdf(order: PdfOrder<'_>) -> CoreResult<Vec<u8>> {
                 .flat_map(|line| wrap_paragraph(line, 430.0, 10.0)),
         );
     }
+    if !order.order_details.trim().is_empty() {
+        order_lines.extend(
+            order
+                .order_details
+                .lines()
+                .flat_map(|line| wrap_paragraph(line, 430.0, 10.0)),
+        );
+    }
     if order_lines.is_empty() {
         order_lines.push("".to_string());
     }

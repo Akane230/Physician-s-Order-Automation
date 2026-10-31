@@ -18,6 +18,8 @@ pub struct OrderRequest {
     /// ISO format: YYYY-MM-DD.
     pub order_date: String,
     pub diagnoses: Vec<Diagnosis>,
+    #[serde(default)]
+    pub order_details: String,
     pub comments: String,
 }
 
@@ -38,6 +40,11 @@ pub fn render_order_pdf(
     if request.comments.chars().count() > 5_000 {
         return Err(CoreError::Validation(
             "comments exceed 5000 characters".into(),
+        ));
+    }
+    if request.order_details.chars().count() > 10_000 {
+        return Err(CoreError::Validation(
+            "order details exceed 10000 characters".into(),
         ));
     }
     if request.diagnoses.len() > 100 {
@@ -87,6 +94,7 @@ pub fn render_order_pdf(
         diagnoses: &request.diagnoses,
         order_type_name: &order_type.name,
         md_order_body: &body,
+        order_details: &request.order_details,
         comments: &request.comments,
     })
 }
@@ -104,6 +112,7 @@ struct PdfOrder<'a> {
     diagnoses: &'a [Diagnosis],
     order_type_name: &'a str,
     md_order_body: &'a str,
+    order_details: &'a str,
     comments: &'a str,
 }
 
