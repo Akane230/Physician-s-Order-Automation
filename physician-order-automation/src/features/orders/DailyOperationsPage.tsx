@@ -19,19 +19,49 @@ const emptyPatient: PatientSelection = {
   original: null,
 };
 
-export default function DailyOperationsPage({ isAdmin }: { isAdmin: boolean }) {
+export default function DailyOperationsPage() {
   const [patient, setPatient] = useState<PatientSelection>(emptyPatient);
   const [diagnoses, setDiagnoses] = useState<Diagnosis[]>([]);
+  const [formVersion, setFormVersion] = useState(0);
+
+  function startNewOrder() {
+    setPatient(emptyPatient);
+    setDiagnoses([]);
+    setFormVersion((version) => version + 1);
+  }
 
   return (
     <div className="flex flex-col gap-6">
-      <header>
-        <h2 className="text-xl font-semibold">Daily operations</h2>
-        <p className="mt-1 text-sm text-slate-600">Work with patient demographics and prepare order details.</p>
+      <header className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2 className="text-xl font-semibold text-blue-950">
+            Daily operations
+          </h2>
+          <p className="mt-1 text-sm text-slate-600">
+            Prepare a patient-specific physician order.
+          </p>
+        </div>
+        <button
+          className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          onClick={startNewOrder}
+          type="button"
+        >
+          Start new order
+        </button>
       </header>
-      <PatientRecordsPanel isAdmin={isAdmin} onPatientChange={setPatient} />
-      <DiagnosisEditor onDiagnosesChange={setDiagnoses} />
-      <OrderDetailsPanel patient={patient} diagnoses={diagnoses} />
+      <PatientRecordsPanel
+        key={`patient-${formVersion}`}
+        onPatientChange={setPatient}
+      />
+      <DiagnosisEditor
+        key={`diagnosis-${formVersion}`}
+        onDiagnosesChange={setDiagnoses}
+      />
+      <OrderDetailsPanel
+        key={`order-${formVersion}`}
+        patient={patient}
+        diagnoses={diagnoses}
+      />
     </div>
   );
 }

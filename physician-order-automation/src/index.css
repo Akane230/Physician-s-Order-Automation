@@ -20,4 +20,13 @@ body,
 
 body {
   min-height: 100vh;
+  background: #eef1f5;
 }
+
+button, input, select, textarea { font: inherit; }
+button { cursor: pointer; }
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: 3px solid #bfdbfe;
+  outline-offset: 2px;
+}
+input, select, textarea { min-width: 0; }
