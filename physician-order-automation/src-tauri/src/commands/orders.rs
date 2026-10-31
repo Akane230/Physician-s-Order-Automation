@@ -1,5 +1,4 @@
 use orders_core::{
-    auth::AuthService,
     orders::{self, OrderRequest},
     reference_data::ReferenceDataRepository,
 };
@@ -10,12 +9,9 @@ use tauri_plugin_dialog::DialogExt;
 #[tauri::command]
 pub fn export_order(
     app: AppHandle,
-    auth: State<'_, AuthService>,
     reference_data: State<'_, ReferenceDataRepository>,
     request: OrderRequest,
 ) -> Result<Option<String>, String> {
-    auth.require_authenticated()
-        .map_err(|error| error.to_string())?;
     let physician = reference_data
         .get_active_physician(&request.physician_id)
         .map_err(|error| error.to_string())?;

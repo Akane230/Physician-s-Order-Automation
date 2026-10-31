@@ -3,7 +3,6 @@
 //! Keep Tauri and UI concerns out of this crate so the same rules can be reused by
 //! a future LAN service.
 
-pub mod auth;
 pub mod db;
 pub mod error;
 pub mod orders;

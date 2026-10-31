@@ -2,8 +2,7 @@
 mod commands;
 
 use orders_core::{
-    auth::AuthService, db::Database, patients::PatientRepository,
-    reference_data::ReferenceDataRepository,
+    db::Database, patients::PatientRepository, reference_data::ReferenceDataRepository,
 };
 use tauri::Manager;
 
@@ -20,7 +19,6 @@ pub fn run() {
             drop(database.open().map_err(|error| {
                 std::io::Error::other(format!("database initialization failed: {error}"))
             })?);
-            app.manage(AuthService::new(database.clone()));
             app.manage(PatientRepository::new(database.clone()));
             app.manage(ReferenceDataRepository::new(database.clone()));
             app.manage(database);
@@ -29,10 +27,6 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::system::ping,
             commands::database::database_status,
-            commands::auth::auth_status,
-            commands::auth::setup_initial_admin,
-            commands::auth::login,
-            commands::auth::logout,
             commands::patients::search_patients,
             commands::patients::get_patient,
             commands::patients::save_patient,

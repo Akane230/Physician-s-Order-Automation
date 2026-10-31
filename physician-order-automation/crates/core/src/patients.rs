@@ -82,7 +82,7 @@ impl PatientRepository {
         .map_err(CoreError::from)
     }
 
-    pub fn save(&self, draft: PatientDraft, user_id: &str) -> CoreResult<SavePatientResult> {
+    pub fn save(&self, draft: PatientDraft) -> CoreResult<SavePatientResult> {
         let patient = ValidatedPatient::try_from(draft)?;
         let mut conn = self.database.open()?;
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -116,12 +116,12 @@ impl PatientRepository {
 
         let result = if let Some(id) = matching_id {
             tx.execute(
-                "UPDATE patients SET last_name = ?1, first_name = ?2, full_name = ?3, gender = ?4, address = ?5, dob = ?6, phone = ?7, medicare = ?8, other_insurance = ?9, medicare_normalized = ?10, name_normalized = ?11, updated_at = ?12, updated_by = ?13 WHERE id = ?14",
+                "UPDATE patients SET last_name = ?1, first_name = ?2, full_name = ?3, gender = ?4, address = ?5, dob = ?6, phone = ?7, medicare = ?8, other_insurance = ?9, medicare_normalized = ?10, name_normalized = ?11, updated_at = ?12, updated_by = NULL WHERE id = ?13",
                 (
                     &patient.last_name, &patient.first_name, &patient.full_name,
                     &patient.gender, &patient.address, &patient.dob, &patient.phone,
                     &patient.medicare, &patient.other_insurance, &patient.medicare_normalized,
-                    &patient.name_normalized, &now, user_id, &id,
+                    &patient.name_normalized, &now, &id,
                 ),
             )?;
             SavePatientResult::Updated(id)
@@ -129,12 +129,12 @@ impl PatientRepository {
             let id = random_id()?;
             tx.execute(
                 r#"INSERT INTO patients (id, last_name, first_name, full_name, gender, address, dob, phone, medicare, other_insurance, medicare_normalized, name_normalized, created_at, updated_at, created_by, updated_by)
-                   VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?13, ?14, ?14)"#,
+                   VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?13, NULL, NULL)"#,
                 (
                     &id, &patient.last_name, &patient.first_name, &patient.full_name,
                     &patient.gender, &patient.address, &patient.dob, &patient.phone,
                     &patient.medicare, &patient.other_insurance, &patient.medicare_normalized,
-                    &patient.name_normalized, &now, user_id,
+                    &patient.name_normalized, &now,
                 ),
             )?;
             SavePatientResult::Created(id)
