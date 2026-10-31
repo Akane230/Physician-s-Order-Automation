@@ -11,7 +11,7 @@ use zeroize::Zeroizing;
 
 const KEY_SERVICE: &str = "com.homekure.physician-order-automation";
 const KEY_ACCOUNT: &str = "sqlcipher-database-key-v1";
-const SCHEMA_VERSION: i64 = 4;
+const SCHEMA_VERSION: i64 = 5;
 
 /// Owns the encrypted local database path and opens configured connections.
 /// The database key is created once and stored only in the OS credential store.
@@ -159,6 +159,10 @@ fn migrate(conn: &mut Connection) -> CoreResult<()> {
     if current < 4 {
         tx.execute_batch(MIGRATION_4)?;
         tx.pragma_update(None, "user_version", 4)?;
+    }
+    if current < 5 {
+        tx.execute_batch(MIGRATION_5)?;
+        tx.pragma_update(None, "user_version", 5)?;
     }
     tx.commit()?;
     Ok(())
@@ -346,6 +350,21 @@ INSERT INTO schema_version(version, applied_at)
 VALUES (4, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));
 "#;
 
+// Retained for databases that reached schema version 5. The application keeps
+// using the legacy single-string `address` column; these columns are ignored.
+const MIGRATION_5: &str = r#"
+ALTER TABLE patients ADD COLUMN street_address TEXT;
+ALTER TABLE patients ADD COLUMN city TEXT;
+ALTER TABLE patients ADD COLUMN state TEXT;
+ALTER TABLE patients ADD COLUMN postal_code TEXT;
+ALTER TABLE patients ADD COLUMN country TEXT;
+UPDATE patients
+SET street_address = address
+WHERE address IS NOT NULL AND trim(address) <> '';
+INSERT INTO schema_version(version, applied_at)
+VALUES (5, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));
+"#;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -354,7 +373,7 @@ mod tests {
     fn migration_removes_users_and_nulls_attribution_without_losing_records() {
         let dir = tempfile::tempdir().expect("temporary directory");
         let db = Database::new_with_test_key(dir.path().join("migration.db"));
-        let mut conn = Connection::open(db.path()).expect("open legacy db");
+        let conn = Connection::open(db.path()).expect("open legacy db");
         conn.pragma_update(None, "key", "test-only-sqlcipher-key")
             .expect("set test key");
         conn.execute_batch(MIGRATION_1).expect("migration 1");
@@ -367,15 +386,15 @@ mod tests {
         conn.pragma_update(None, "user_version", 3)
             .expect("version 3");
         conn.execute("INSERT INTO users(id,username,display_name,password_hash,role,created_at,updated_at) VALUES('u1','legacy','Legacy User','hash','admin','now','now')", []).expect("legacy user");
-        conn.execute("INSERT INTO patients(id,full_name,created_at,updated_at,created_by,updated_by) VALUES('p1','Test Patient','created','updated','u1','u1')", []).expect("legacy patient");
+        conn.execute("INSERT INTO patients(id,full_name,address,created_at,updated_at,created_by,updated_by) VALUES('p1','Test Patient','123 Legacy Road, Legacy City','created','updated','u1','u1')", []).expect("legacy patient");
         conn.execute("INSERT INTO audit_log(id,ts,user_id,action,entity_type,detail,prev_hash,hash) VALUES('a1','now','u1','save','patient','{}','','h')", []).expect("legacy audit row");
         drop(conn);
 
-        let conn = db.open().expect("apply migration 4");
+        let conn = db.open().expect("apply migration 5");
         let version: i64 = conn
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .expect("read version");
-        assert_eq!(version, 4);
+        assert_eq!(version, 5);
         let user_table_count: i64 = conn
             .query_row(
                 "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='users'",
@@ -400,6 +419,20 @@ mod tests {
             )
             .expect("preserved patient");
         assert_eq!(patient, ("Test Patient".into(), None, None));
+        let address: (String, Option<String>) = conn
+            .query_row(
+                "SELECT address,street_address FROM patients WHERE id='p1'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("legacy address is preserved");
+        assert_eq!(
+            address,
+            (
+                "123 Legacy Road, Legacy City".into(),
+                Some("123 Legacy Road, Legacy City".into())
+            )
+        );
         let audit_user: Option<String> = conn
             .query_row("SELECT user_id FROM audit_log WHERE id='a1'", [], |row| {
                 row.get(0)

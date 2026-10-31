@@ -13,6 +13,20 @@ const IMAGE_WIDTH: i64 = 2481;
 const IMAGE_HEIGHT: i64 = 3508;
 const FONT: &[u8] = b"FPOA";
 const BOLD: &[u8] = b"FPOAB";
+const TABLE_LEFT: f32 = 52.0;
+const LABEL_DIVIDER: f32 = 146.0;
+const TABLE_RIGHT: f32 = 542.0;
+const TABLE_TOP: f32 = 682.0;
+const COMMENTS_TOP: f32 = 223.0;
+const MD_LINE_HEIGHT: f32 = 13.2;
+
+struct FieldRow {
+    label: String,
+    label_lines: Vec<String>,
+    value_lines: Vec<String>,
+    height: f32,
+    font_size: f32,
+}
 
 pub(super) fn render_pdf(order: PdfOrder<'_>) -> CoreResult<Vec<u8>> {
     let patient_name = order.patient_name.trim();
@@ -23,17 +37,29 @@ pub(super) fn render_pdf(order: PdfOrder<'_>) -> CoreResult<Vec<u8>> {
         .filter(|line| !line.is_empty())
         .flat_map(|line| wrap_paragraph(&line, 380.0, 9.0))
         .collect::<Vec<_>>();
-    let (diagnosis_first, diagnosis_overflow) = diagnoses.split_at(diagnoses.len().min(2));
+    let diagnosis_first = diagnoses.iter().take(3).cloned().collect::<Vec<_>>();
+    let diagnosis_overflow = diagnoses
+        .iter()
+        .skip(3)
+        .map(|line| format!("Diagnosis: {line}"))
+        .collect::<Vec<_>>();
+    let rows = patient_rows(&order, patient_name);
+    let diagnosis_height = 40.0_f32.max(diagnosis_first.len() as f32 * 12.0 + 4.0);
+    let demographics_bottom =
+        TABLE_TOP - rows.iter().map(|row| row.height).sum::<f32>() - diagnosis_height;
+    let body_start = demographics_bottom - 43.0;
+    let body_capacity = ((body_start - 236.0) / MD_LINE_HEIGHT).floor() as usize;
+    if body_capacity < 3 {
+        return Err(CoreError::Validation(
+            "Patient address and demographic details are too long for the order form. Shorten the values before generating the PDF.".into(),
+        ));
+    }
 
     let mut order_lines = Vec::new();
     if !order.order_type_name.trim().is_empty() {
         order_lines.push(format!("Order type: {}", order.order_type_name.trim()));
     }
-    order_lines.extend(
-        diagnosis_overflow
-            .iter()
-            .map(|line| format!("Diagnosis: {line}")),
-    );
+    order_lines.extend(diagnosis_overflow);
     if !order.md_order_body.trim().is_empty() {
         order_lines.extend(
             order
@@ -53,7 +79,7 @@ pub(super) fn render_pdf(order: PdfOrder<'_>) -> CoreResult<Vec<u8>> {
     if order_lines.is_empty() {
         order_lines.push("".to_string());
     }
-    let order_pages = chunks(order_lines, 15);
+    let order_pages = chunks(order_lines, body_capacity);
 
     let comment_lines = if order.comments.trim().is_empty() {
         Vec::new()
@@ -70,6 +96,18 @@ pub(super) fn render_pdf(order: PdfOrder<'_>) -> CoreResult<Vec<u8>> {
         chunks(comment_lines, 4)
     };
     let page_count = order_pages.len().max(comment_pages.len()).max(1);
+    if page_count > 50 {
+        return Err(CoreError::Validation(
+            "Order content exceeds the 50-page PDF limit. Shorten the order details or comments before generating.".into(),
+        ));
+    }
+    let printed_name = format!("{}  NPI: {}", order.physician_name, order.physician_npi);
+    let signature_lines = wrap_paragraph(&printed_name, 460.0, 9.5);
+    if signature_lines.len() > 3 {
+        return Err(CoreError::Validation(
+            "The selected physician name and NPI do not fit in the signature block.".into(),
+        ));
+    }
 
     let mut document = Document::with_version("1.4");
     let pages_id = document.new_object_id();
@@ -105,20 +143,35 @@ pub(super) fn render_pdf(order: PdfOrder<'_>) -> CoreResult<Vec<u8>> {
             Operation::new("Do", vec![Object::Name(b"Bg".to_vec())]),
             Operation::new("Q", vec![]),
         ];
-        draw_patient_fields(&mut operations, &order, patient_name);
-        for (line_index, line) in diagnosis_first.iter().enumerate() {
-            draw_text(
-                &mut operations,
-                line,
-                152.0,
-                553.0 - line_index as f32 * 12.0,
-                9.0,
-                false,
-            )?;
-        }
+        white_rect(
+            &mut operations,
+            TABLE_LEFT,
+            COMMENTS_TOP + 0.8,
+            TABLE_RIGHT - TABLE_LEFT,
+            TABLE_TOP - COMMENTS_TOP - 0.8,
+        );
+        let diagnosis_row = FieldRow {
+            label: "Diagnoses:".into(),
+            label_lines: vec!["Diagnoses:".into()],
+            value_lines: diagnosis_first.clone(),
+            height: diagnosis_height,
+            font_size: 9.0,
+        };
+        let mut page_rows = rows.iter().map(clone_field_row).collect::<Vec<_>>();
+        page_rows.push(diagnosis_row);
+        draw_patient_table(&mut operations, &page_rows)?;
+        let md_top = demographics_bottom;
+        draw_text(&mut operations, "MD ORDER", 93.8, md_top - 22.0, 14.0, true)?;
 
         if page_index > 0 {
-            draw_text(&mut operations, "(CONTINUED)", 177.0, 474.0, 9.0, true)?;
+            draw_text(
+                &mut operations,
+                "(CONTINUED)",
+                177.0,
+                md_top - 22.0,
+                9.0,
+                true,
+            )?;
         }
         if let Some(lines) = order_pages.get(page_index) {
             for (line_index, line) in lines.iter().enumerate() {
@@ -126,7 +179,7 @@ pub(super) fn render_pdf(order: PdfOrder<'_>) -> CoreResult<Vec<u8>> {
                     &mut operations,
                     line,
                     93.8,
-                    449.0 - line_index as f32 * 13.2,
+                    body_start - line_index as f32 * MD_LINE_HEIGHT,
                     10.0,
                     false,
                 )?;
@@ -146,8 +199,16 @@ pub(super) fn render_pdf(order: PdfOrder<'_>) -> CoreResult<Vec<u8>> {
             }
         }
         if page_index + 1 == page_count {
-            let printed_name = format!("{}  NPI: {}", order.physician_name, order.physician_npi);
-            draw_text(&mut operations, &printed_name, 57.8, 103.0, 10.0, false)?;
+            for (index, line) in signature_lines.iter().enumerate() {
+                draw_text(
+                    &mut operations,
+                    line,
+                    57.8,
+                    118.0 - index as f32 * 12.0,
+                    9.5,
+                    false,
+                )?;
+            }
         }
 
         let content = Content { operations }
@@ -184,21 +245,158 @@ pub(super) fn render_pdf(order: PdfOrder<'_>) -> CoreResult<Vec<u8>> {
     Ok(bytes)
 }
 
-fn draw_patient_fields(operations: &mut Vec<Operation>, order: &PdfOrder<'_>, patient_name: &str) {
-    let rows = [
-        (patient_name, 669.0),
-        (order.address, 653.8),
-        (order.dob, 638.7),
-        (order.phone, 623.5),
-        (order.medicare, 608.4),
-        (order.other_insurance, 593.2),
-        (&order.order_date, 578.1),
+fn patient_rows(order: &PdfOrder<'_>, patient_name: &str) -> Vec<FieldRow> {
+    let mut name_lines = wrap_paragraph(patient_name, 382.0, 9.5);
+    let mut address_lines = wrap_paragraph(order.address, 382.0, 9.5);
+    let mut physician_lines = wrap_paragraph(
+        &format!("{}  NPI: {}", order.physician_name, order.physician_npi),
+        382.0,
+        9.5,
+    );
+    let mut rows = vec![
+        make_field_row("Patient Name:", &mut name_lines, 9.5),
+        make_field_row("Address:", &mut address_lines, 9.5),
+        make_field_row("DOB:", &mut wrap_paragraph(order.dob, 382.0, 9.5), 9.5),
+        make_field_row(
+            "Phone No.:",
+            &mut wrap_paragraph(order.phone, 382.0, 9.5),
+            9.5,
+        ),
+        make_field_row(
+            "Primary Insurance ID:",
+            &mut wrap_paragraph(order.medicare, 382.0, 9.5),
+            9.5,
+        ),
+        make_field_row(
+            "Secondary Insurance ID:",
+            &mut wrap_paragraph(order.other_insurance, 382.0, 9.5),
+            9.5,
+        ),
+        make_field_row(
+            "Order Date:",
+            &mut wrap_paragraph(&order.order_date, 382.0, 9.5),
+            9.5,
+        ),
+        make_field_row("Physician:", &mut physician_lines, 9.5),
     ];
-    for (value, y) in rows {
-        draw_fit_text(operations, value, 152.3, y, 385.0, 10.2, false);
+    // Do not leave empty values represented as artificial wrapped rows.
+    for row in &mut rows {
+        if row.value_lines.len() == 1 && row.value_lines[0].is_empty() {
+            row.value_lines.clear();
+        }
     }
-    let physician = format!("{}  NPI: {}", order.physician_name, order.physician_npi);
-    draw_fit_text(operations, &physician, 152.3, 562.9, 385.0, 10.2, true);
+    rows
+}
+
+fn make_field_row(label: &str, value_lines: &mut Vec<String>, font_size: f32) -> FieldRow {
+    let label_lines = wrap_paragraph(label, LABEL_DIVIDER - TABLE_LEFT - 12.0, 8.5);
+    let height = 15.0_f32
+        .max(value_lines.len() as f32 * 12.0)
+        .max(label_lines.len() as f32 * 10.5);
+    FieldRow {
+        label: label.to_string(),
+        label_lines,
+        value_lines: value_lines.clone(),
+        height,
+        font_size,
+    }
+}
+
+fn clone_field_row(row: &FieldRow) -> FieldRow {
+    FieldRow {
+        label: row.label.clone(),
+        label_lines: row.label_lines.clone(),
+        value_lines: row.value_lines.clone(),
+        height: row.height,
+        font_size: row.font_size,
+    }
+}
+
+fn draw_patient_table(operations: &mut Vec<Operation>, rows: &[FieldRow]) -> CoreResult<()> {
+    let diagnosis = rows.last().expect("diagnosis row is always present");
+    let table_bottom = TABLE_TOP - rows.iter().map(|row| row.height).sum::<f32>();
+    draw_line(operations, TABLE_LEFT, TABLE_TOP, TABLE_RIGHT, TABLE_TOP);
+    draw_line(
+        operations,
+        TABLE_LEFT,
+        table_bottom,
+        TABLE_RIGHT,
+        table_bottom,
+    );
+    draw_line(operations, TABLE_LEFT, TABLE_TOP, TABLE_LEFT, table_bottom);
+    draw_line(
+        operations,
+        TABLE_RIGHT,
+        TABLE_TOP,
+        TABLE_RIGHT,
+        table_bottom,
+    );
+    draw_line(
+        operations,
+        TABLE_LEFT,
+        table_bottom,
+        TABLE_LEFT,
+        COMMENTS_TOP,
+    );
+    draw_line(
+        operations,
+        TABLE_RIGHT,
+        table_bottom,
+        TABLE_RIGHT,
+        COMMENTS_TOP,
+    );
+    draw_line(
+        operations,
+        TABLE_LEFT,
+        COMMENTS_TOP,
+        TABLE_RIGHT,
+        COMMENTS_TOP,
+    );
+    let diagnosis_top = table_bottom + diagnosis.height;
+    draw_line(
+        operations,
+        LABEL_DIVIDER,
+        TABLE_TOP,
+        LABEL_DIVIDER,
+        diagnosis_top,
+    );
+
+    let mut top = TABLE_TOP;
+    for row in rows {
+        let baseline = top - 10.5;
+        for (index, line) in row.label_lines.iter().enumerate() {
+            draw_text(
+                operations,
+                line,
+                TABLE_LEFT + 5.8,
+                baseline - index as f32 * 10.5,
+                8.5,
+                true,
+            )?;
+        }
+        for (index, line) in row.value_lines.iter().enumerate() {
+            draw_text(
+                operations,
+                line,
+                LABEL_DIVIDER + 6.3,
+                baseline - index as f32 * 12.0,
+                row.font_size,
+                false,
+            )?;
+        }
+        top -= row.height;
+        draw_line(operations, TABLE_LEFT, top, TABLE_RIGHT, top);
+    }
+    Ok(())
+}
+
+fn draw_line(operations: &mut Vec<Operation>, x1: f32, y1: f32, x2: f32, y2: f32) {
+    operations.extend([
+        Operation::new("w", vec![Object::Real(0.55)]),
+        Operation::new("m", vec![Object::Real(x1), Object::Real(y1)]),
+        Operation::new("l", vec![Object::Real(x2), Object::Real(y2)]),
+        Operation::new("S", vec![]),
+    ]);
 }
 
 fn add_font(document: &mut Document, base_font: &str) -> (u32, u16) {
@@ -208,28 +406,6 @@ fn add_font(document: &mut Document, base_font: &str) -> (u32, u16) {
         "BaseFont" => base_font,
         "Encoding" => "WinAnsiEncoding",
     })
-}
-
-fn draw_fit_text(
-    operations: &mut Vec<Operation>,
-    text: &str,
-    x: f32,
-    y: f32,
-    max_width: f32,
-    max_size: f32,
-    bold: bool,
-) {
-    let text = text.trim();
-    if text.is_empty() {
-        return;
-    }
-    let width_at_size = estimate_width(text, max_size);
-    let size = if width_at_size > max_width {
-        (max_size * max_width / width_at_size).max(7.0)
-    } else {
-        max_size
-    };
-    let _ = draw_text(operations, text, x, y, size, bold);
 }
 
 fn draw_text(
@@ -255,6 +431,27 @@ fn draw_text(
         Operation::new("ET", vec![]),
     ]);
     Ok(())
+}
+
+fn white_rect(operations: &mut Vec<Operation>, x: f32, y: f32, width: f32, height: f32) {
+    operations.extend([
+        Operation::new("q", vec![]),
+        Operation::new(
+            "rg",
+            vec![Object::Real(1.0), Object::Real(1.0), Object::Real(1.0)],
+        ),
+        Operation::new(
+            "re",
+            vec![
+                Object::Real(x),
+                Object::Real(y),
+                Object::Real(width),
+                Object::Real(height),
+            ],
+        ),
+        Operation::new("f", vec![]),
+        Operation::new("Q", vec![]),
+    ]);
 }
 
 fn chunks<T>(items: Vec<T>, size: usize) -> Vec<Vec<T>> {
@@ -379,4 +576,68 @@ fn win_ansi(value: &str) -> CoreResult<Vec<u8>> {
             })
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample_order<'a>(
+        address: &'a str,
+        diagnoses: &'a [Diagnosis],
+        body: &'a str,
+        comments: &'a str,
+    ) -> PdfOrder<'a> {
+        PdfOrder {
+            patient_name: "Taylor Test".into(),
+            address,
+            dob: "03/26/1954",
+            phone: "555-010-1234",
+            medicare: "PRIMARY123",
+            other_insurance: "SECONDARY456",
+            order_date: "11/01/2026".into(),
+            physician_name: "Dr. Example Physician",
+            physician_npi: "1234567890",
+            diagnoses,
+            order_type_name: "Sample Order",
+            md_order_body: body,
+            order_details: "",
+            comments,
+        }
+    }
+
+    #[test]
+    fn wraps_long_order_content_onto_additional_pages_without_losing_text() {
+        let body = (1..=80)
+            .map(|index| format!("Order instruction line {index}: provide the requested service."))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let pdf = render_pdf(sample_order(
+            "14 Sample Road, Dallas, TX, 75001, USA",
+            &[],
+            &body,
+            "Coordinate with the caregiver before the visit.",
+        ))
+        .unwrap();
+        let document = Document::load_mem(&pdf).unwrap();
+        let pages = document.get_pages();
+        assert!(pages.len() > 1);
+        let page_numbers = pages.keys().copied().collect::<Vec<_>>();
+        let text = document.extract_text(&page_numbers).unwrap();
+        assert!(text.contains("Order instruction line 1:"));
+        assert!(text.contains("Order instruction line 80:"));
+        assert!(text.contains("14 Sample Road, Dallas, TX, 75001, USA"));
+        assert!(text.contains("14 Sample Road"));
+        assert!(text.contains("Dallas, TX"));
+        assert!(text.contains("75001"));
+        assert!(text.contains("USA"));
+    }
+
+    #[test]
+    fn rejects_demographic_blocks_that_leave_no_safe_order_body_area() {
+        let address = "Long Street Name ".repeat(500);
+        let error = render_pdf(sample_order(&address, &[], "Short order", ""))
+            .expect_err("oversized address should be rejected rather than clipped");
+        assert!(error.to_string().contains("too long for the order form"));
+    }
 }

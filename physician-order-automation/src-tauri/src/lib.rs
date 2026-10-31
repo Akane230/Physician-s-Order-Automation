@@ -32,6 +32,8 @@ pub fn run() {
             commands::patients::save_patient,
             commands::patients::delete_patient,
             commands::parsing::parse_demographics,
+            commands::pdf_import::import_demographics_pdf,
+            commands::pdf_import::import_demographics_pdf_path,
             commands::diagnoses::parse_diagnoses,
             commands::reference_data::list_physicians,
             commands::reference_data::save_physician,

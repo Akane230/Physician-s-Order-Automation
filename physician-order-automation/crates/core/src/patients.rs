@@ -1,6 +1,6 @@
 use crate::{CoreError, CoreResult, db::Database};
 use chrono::{NaiveDate, Utc};
-use rusqlite::{OptionalExtension, TransactionBehavior};
+use rusqlite::{OptionalExtension, TransactionBehavior, params};
 use serde::{Deserialize, Serialize};
 
 const MAX_SEARCH_RESULTS: i64 = 50;
@@ -63,6 +63,7 @@ impl PatientRepository {
                WHERE ?1 = '' OR instr(lower(full_name), lower(?1)) > 0
                   OR instr(COALESCE(medicare, ''), ?1) > 0
                   OR instr(COALESCE(phone, ''), ?1) > 0
+                  OR instr(lower(COALESCE(address, '')), lower(?1)) > 0
                ORDER BY last_name COLLATE NOCASE, first_name COLLATE NOCASE
                LIMIT ?2"#,
         )?;
@@ -117,12 +118,12 @@ impl PatientRepository {
         let result = if let Some(id) = matching_id {
             tx.execute(
                 "UPDATE patients SET last_name = ?1, first_name = ?2, full_name = ?3, gender = ?4, address = ?5, dob = ?6, phone = ?7, medicare = ?8, other_insurance = ?9, medicare_normalized = ?10, name_normalized = ?11, updated_at = ?12, updated_by = NULL WHERE id = ?13",
-                (
+                params![
                     &patient.last_name, &patient.first_name, &patient.full_name,
                     &patient.gender, &patient.address, &patient.dob, &patient.phone,
                     &patient.medicare, &patient.other_insurance, &patient.medicare_normalized,
                     &patient.name_normalized, &now, &id,
-                ),
+                ],
             )?;
             SavePatientResult::Updated(id)
         } else {
@@ -130,12 +131,12 @@ impl PatientRepository {
             tx.execute(
                 r#"INSERT INTO patients (id, last_name, first_name, full_name, gender, address, dob, phone, medicare, other_insurance, medicare_normalized, name_normalized, created_at, updated_at, created_by, updated_by)
                    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?13, NULL, NULL)"#,
-                (
+                params![
                     &id, &patient.last_name, &patient.first_name, &patient.full_name,
-                    &patient.gender, &patient.address, &patient.dob, &patient.phone,
-                    &patient.medicare, &patient.other_insurance, &patient.medicare_normalized,
+                    &patient.gender, &patient.address, &patient.dob, &patient.phone, &patient.medicare,
+                    &patient.other_insurance, &patient.medicare_normalized,
                     &patient.name_normalized, &now,
-                ),
+                ],
             )?;
             SavePatientResult::Created(id)
         };
@@ -197,13 +198,14 @@ impl TryFrom<PatientDraft> for ValidatedPatient {
             .as_deref()
             .map(normalize_identifier)
             .filter(|value| !value.is_empty());
+        let address = optional_text(draft.address, 500)?;
         Ok(Self {
             full_name,
             first_name,
             last_name,
             name_normalized,
             gender,
-            address: optional_text(draft.address, 500)?,
+            address,
             dob,
             phone,
             medicare,
@@ -274,6 +276,38 @@ fn random_id() -> CoreResult<String> {
     let id = bytes.iter().map(|byte| format!("{byte:02x}")).collect();
     bytes.zeroize();
     Ok(id)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn saves_loads_and_searches_single_address_field() {
+        let directory = tempfile::tempdir().unwrap();
+        let database = Database::new_with_test_key(directory.path().join("patients.db"));
+        let repository = PatientRepository::new(database);
+        let result = repository
+            .save(PatientDraft {
+                full_name: "Sample Patient".into(),
+                gender: None,
+                address: Some("14 Sample Road, Dallas, TX, 75001, USA".into()),
+                dob: None,
+                phone: None,
+                medicare: None,
+                other_insurance: None,
+            })
+            .unwrap();
+        let SavePatientResult::Created(patient_id) = result else {
+            panic!("expected new patient")
+        };
+        let loaded = repository.get(&patient_id).unwrap().unwrap();
+        assert_eq!(
+            loaded.address.as_deref(),
+            Some("14 Sample Road, Dallas, TX, 75001, USA")
+        );
+        assert_eq!(repository.search("Dallas").unwrap().len(), 1);
+    }
 }
 
 use zeroize::Zeroize;

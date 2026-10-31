@@ -76,7 +76,6 @@ pub fn render_order_pdf(
         .replace("{{order_date}}", &display_date)
         .replace("{{physician_name}}", &physician.name)
         .replace("{{physician_npi}}", &physician.npi);
-
     pdf::render_pdf(PdfOrder {
         patient_name,
         address: request.patient.address.as_deref().unwrap_or_default(),
